@@ -22,7 +22,7 @@ import (
 {{- range .Funcs }}
 func {{.Name}}(t *testing.T) {
 	t.Parallel()
-	{{- range .Subtests }}
+	{{- range .Subtests -}}
 	t.Run("{{ .Name }}", func(t *testing.T){{ .Body }})
 	{{- end }}
 }
