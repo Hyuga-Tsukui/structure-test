@@ -13,7 +13,13 @@ import (
 )
 
 var funcTemplate = `
-{{- range . }}
+package {{ .Package }}
+
+import (
+{{ .Imports }}
+)
+
+{{- range .Funcs }}
 func {{.Name}}(t *testing.T) {
 	t.Parallel()
 	{{- range .Subtests }}
@@ -23,7 +29,13 @@ func {{.Name}}(t *testing.T) {
 {{- end }}
 `
 
-type FuncTemplateData struct {
+type TemplateData struct {
+    Package string
+    Imports string
+    Funcs []FuncData
+}
+
+type FuncData struct {
 	Name     string
 	Subtests []Subtest
 }
@@ -35,11 +47,18 @@ type Subtest struct {
 
 func main() {
 	filename := os.Args[1]
+    newFilename := filename[:len(filename)-3] + "_generated_test.go"
 	fset := token.NewFileSet()
 
 	f, err := parser.ParseFile(fset, filename, nil, 0)
 	if err != nil {
 		panic(err)
+	}
+
+    imports := bytes.Buffer{}
+	for _, imp := range f.Imports {
+		format.Node(&imports, fset, imp)
+		imports.WriteString("\n")
 	}
 
 	funcGroups := make(map[string][]Subtest)
@@ -69,26 +88,32 @@ func main() {
 		return true
 	})
 
-	data := make([]FuncTemplateData, 0, len(funcGroups))
+    templData := TemplateData{
+        Package: f.Name.Name,
+        Imports: string(imports.Bytes()),
+    }
+
+	fnData := make([]FuncData, 0, len(funcGroups))
 	for group, subtests := range funcGroups {
-		data = append(data, FuncTemplateData{
+		fnData = append(fnData, FuncData{
 			Name:     group,
 			Subtests: subtests,
 		})
 	}
+    templData.Funcs = fnData
 
 	tmpl, err := template.New("func").Parse(funcTemplate)
 	if err != nil {
 		panic(err)
 	}
 
-	o, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
+    outputFile, err := os.Create(newFilename)
 	if err != nil {
 		panic(err)
 	}
-	defer o.Close()
+	defer outputFile.Close()
 
-	if err := tmpl.Execute(o, data); err != nil {
+    if err := tmpl.Execute(outputFile, templData); err != nil {
 		panic(err)
 	}
 }
